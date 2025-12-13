@@ -3,13 +3,202 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Mini Notes (PWA)</title>
+  <title>Befund-App (PWA)</title>
   <link rel="manifest" href="manifest.webmanifest" />
-  <meta name="theme-color" content="#111827" />
+  <meta name="theme-color" content="#0f172a" />
+  <style>
+    :root{
+      --bg:#0b1020; --card:#0f172a; --muted:#94a3b8; --text:#e5e7eb;
+      --border:#1f2a44; --accent:#2563eb; --accent2:#10b981; --danger:#ef4444;
+      --chip:#111c35;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--text)}
+    header{position:sticky;top:0;z-index:10;background:rgba(15,23,42,.9);backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
+    .wrap{max-width:1100px;margin:0 auto;padding:14px 16px}
+    .titlebar{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+    h1{margin:0;font-size:16px;letter-spacing:.2px}
+    .status{font-size:12px;color:var(--accent2)}
+    .status.bad{color:#fecaca}
+    main{max-width:1100px;margin:0 auto;padding:16px;display:grid;gap:14px}
+    .grid{display:grid;gap:14px}
+    @media (min-width: 900px){.grid{grid-template-columns: 360px 1fr}}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:12px}
+    .card h2{margin:0 0 10px 0;font-size:14px;color:#cbd5e1}
+    .row{display:grid;gap:10px}
+    label{display:grid;gap:6px;font-size:12px;color:#cbd5e1}
+    input, textarea, select{
+      width:100%;border-radius:14px;border:1px solid #223055;background:#0b1020;color:var(--text);
+      padding:10px 12px;outline:none
+    }
+    textarea{min-height:92px;resize:vertical}
+    .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+    .btns{display:flex;gap:10px;flex-wrap:wrap}
+    button{
+      border:0;border-radius:14px;padding:10px 12px;font-weight:700;color:white;background:var(--accent);
+      cursor:pointer
+    }
+    button.secondary{background:#334155}
+    button.ghost{background:transparent;border:1px solid #314264;color:#cbd5e1}
+    button.danger{background:var(--danger)}
+    .pill{font-size:12px;color:#cbd5e1;background:var(--chip);border:1px solid #223055;border-radius:999px;padding:6px 10px}
+    .muted{color:var(--muted);font-size:12px}
+    .cases{display:grid;gap:10px}
+    .caseItem{display:grid;gap:6px;padding:10px;border-radius:16px;border:1px solid #223055;background:#0b1020}
+    .caseItem strong{font-size:13px}
+    .caseMeta{font-size:12px;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap}
+    .hr{height:1px;background:var(--border);margin:10px 0}
+    .two{display:grid;gap:10px}
+    @media (min-width: 900px){.two{grid-template-columns: 1fr 1fr}}
+    .small{font-size:12px}
+    .kpi{display:flex;gap:10px;flex-wrap:wrap}
+    .kpi .pill{border-color:#2b3b66}
+    .printOnly{display:none}
+    @media print{
+      header,.noPrint{display:none !important}
+      body{background:white;color:black}
+      .card{border:1px solid #ddd;background:white}
+      input,textarea,select{border:1px solid #ccc;background:white;color:black}
+      .printOnly{display:block}
+    }
+  </style>
 </head>
 <body>
-  <h1>Mini Notes</h1>
-  <p>App läuft. Öffne im Browser oder installiere sie.</p>
+  <header>
+    <div class="wrap titlebar">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <h1>Befund-App (offline) – DSDS/DTIM Helfer</h1>
+        <span class="pill">PWA</span>
+      </div>
+      <div class="toolbar">
+        <div class="kpi">
+          <span id="pwaStatus" class="status">Status: lädt…</span>
+          <span id="saveHint" class="muted">Auto-Speichern: an</span>
+        </div>
+        <div class="btns noPrint">
+          <button id="btnNew" class="secondary">Neuer Befund</button>
+          <button id="btnSaveCase">Fall speichern</button>
+          <button id="btnInstall" class="secondary" style="display:none;">App installieren</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div class="grid">
+      <section class="card noPrint">
+        <h2>Fälle</h2>
+        <div class="row">
+          <label>Suche
+            <input id="caseSearch" placeholder="Name / Datum / Stichwort…" />
+          </label>
+          <div class="toolbar">
+            <span class="muted">Tippe auf einen Fall, um ihn zu öffnen.</span>
+            <div class="btns">
+              <button id="btnExportAll" class="ghost">Export (JSON)</button>
+              <button id="btnImport" class="ghost">Import</button>
+              <input id="importFile" type="file" accept="application/json" style="display:none" />
+              <button id="btnDeleteAll" class="danger">Alle löschen</button>
+            </div>
+          </div>
+          <div class="cases" id="caseList"></div>
+          <p class="muted" id="caseEmpty" style="display:none">Noch keine gespeicherten Fälle.</p>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="toolbar">
+          <h2>Aktueller Befund</h2>
+          <div class="btns noPrint">
+            <button id="btnExportOne" class="ghost">Export (JSON)</button>
+            <button id="btnCopy" class="ghost">Text kopieren</button>
+            <button id="btnPrint" class="secondary">PDF/Print</button>
+            <button id="btnDeleteCase" class="danger">Fall löschen</button>
+          </div>
+        </div>
+
+        <div class="printOnly">
+          <h2>Befund (Ausdruck)</h2>
+          <p class="small">Erstellt mit der Befund-App (offline).</p>
+        </div>
+
+        <div class="hr"></div>
+
+        <div class="two">
+          <div class="row">
+            <label>Klient:in / Name
+              <input id="clientName" placeholder="z.B. Frau G., Herr R." />
+            </label>
+            <label>Geburtsdatum (optional)
+              <input id="dob" placeholder="TT.MM.JJJJ" />
+            </label>
+            <label>Datum der Untersuchung
+              <input id="date" type="date" />
+            </label>
+            <label>Setting / Kontext
+              <input id="setting" placeholder="z.B. WG, Tagesstruktur, Ambulanz…" />
+            </label>
+          </div>
+
+          <div class="row">
+            <label>Fragestellung / Anlass
+              <textarea id="question" placeholder="Worum ging es bei der Untersuchung?"></textarea>
+            </label>
+            <label>Methoden (Kurz)
+              <textarea id="methods" placeholder="Exploration, Verhaltensbeobachtung, Testverfahren…"></textarea>
+            </label>
+          </div>
+        </div>
+
+        <div class="hr"></div>
+
+        <div class="two">
+          <div class="row">
+            <label>DSDS (Werte)
+              <textarea id="dsds" placeholder="z.B. E=5, M=3, L=1, VL=0, CCS=3; Stadium: Frühes Stadium…"></textarea>
+            </label>
+            <label>DTIM (Werte)
+              <textarea id="dtim" placeholder="z.B. Planen & Handeln: 14/20; weitere Bereiche…"></textarea>
+            </label>
+          </div>
+
+          <div class="row">
+            <label>Kurzzusammenfassung (max. 6–8 Sätze)
+              <textarea id="summary" placeholder="Kurz und klinisch."></textarea>
+            </label>
+            <label>Empfehlungen / weiteres Vorgehen
+              <textarea id="recommendations" placeholder="Konkrete nächste Schritte, Unterstützungsbedarf, Verlauf…"></textarea>
+            </label>
+          </div>
+        </div>
+
+        <div class="hr"></div>
+
+        <div class="row">
+          <div class="toolbar">
+            <h2 style="margin:0;font-size:14px;color:#cbd5e1">Funktionale Bereiche</h2>
+            <div class="btns noPrint">
+              <button id="btnAddDomain" class="secondary">Bereich hinzufügen</button>
+              <button id="btnResetDomains" class="ghost">Standard laden</button>
+            </div>
+          </div>
+          <p class="muted">Jeder Bereich bekommt eine kurze Beschreibung. Du kannst Reihenfolge & Inhalte jederzeit anpassen.</p>
+          <div id="domains"></div>
+        </div>
+
+        <div class="hr"></div>
+
+        <div class="row">
+          <div class="toolbar">
+            <span class="pill">Auto-Text</span>
+            <span class="muted">Unten generiere ich einen zusammenhängenden Text aus deinen Eingaben.</span>
+          </div>
+          <textarea id="generated" readonly></textarea>
+        </div>
+      </section>
+    </div>
+  </main>
+
   <script src="app.js"></script>
 </body>
 </html>
