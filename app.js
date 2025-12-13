@@ -1,0 +1,1 @@
+console.log("Mini Notes PWA läuft");
