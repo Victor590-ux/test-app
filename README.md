@@ -1,23 +1,15 @@
-# PraxisDoku (lokal, offline)
+# Praxis App – Befund + Honorarnote + Backup
 
-Diese Mini-App ist eine **lokale Dokumentationshilfe** (Browser-App ohne Server).
-Sie passt zur Seminar-Logik mit **3 Ebenen**:
+**Single-File App (index.html)** – läuft komplett lokal im Browser (offline möglich).  
+Daten werden im **localStorage** gespeichert und können als **Backup JSON** exportiert und wiederhergestellt werden.
 
-- **Ebene 1 (Strukturdaten / optimale Gesamtbehandlung):** Befund, Ziele, Termine, Vereinbarungen, deskriptive Infos.
-- **Ebene 2 (Geheimnisse):** getrennt dokumentieren – NICHT in interprofessionellen Dekurs.
-- **Ebene 3 (nur für dich):** Resonanz, Arbeitshypothesen, Marker, Selbstmanagement.
+## Funktionen
+- Fälle anlegen / speichern / löschen
+- Befund-Text wird automatisch aus den Feldern generiert
+- Honorarnote (pro Fall): Rechnungsnummern werden automatisch hochgezählt (YYYY-0001 …)
+- Backup exportieren (komplette Daten)
+- Backup wiederherstellen (JSON)
 
-## Start
-1. `index.html` im Browser öffnen (Chrome/Edge).
-2. Passwort vergeben (einfach eintippen). Wenn du es vergisst, sind verschlüsselte Daten nicht wiederherstellbar.
-3. Patient:in anlegen → Dokumente erstellen.
-
-## Backup
-- In **Einstellungen**: Export (JSON)
-- Import ist ebenfalls möglich.
-
-## PDF
-- Im Dokument: Button **PDF/Print** → Browser-Dialog → „Als PDF speichern“.
-
-## Hinweis
-Das ist keine zertifizierte Medizinsoftware – es ist ein praktisches Tool für deine eigene Struktur.
+## Nutzung
+- Öffne `index.html` im Browser (oder auf GitHub Pages hosten).
+- Für PDF: Button **PDF/Print** (Druckdialog → „Als PDF speichern“).
