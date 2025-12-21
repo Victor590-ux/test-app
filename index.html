@@ -57,9 +57,45 @@
       details{border:none;background:white;padding:0}
       .printOnly{display:block}
     }
+  
+    .lockOverlay{position:fixed;inset:0;background:rgba(3,7,18,.78);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;z-index:9999;padding:18px}
+    .lockCard{width:min(520px,100%);background:var(--card);border:1px solid var(--border);border-radius:18px;padding:14px}
+    .lockTitle{font-weight:900;font-size:16px}
+    .lockSub{margin-top:6px;color:var(--muted);font-size:12px}
+    .lockBtn{margin-top:12px;width:100%;border:0;border-radius:14px;padding:10px 12px;font-weight:900;color:white;background:var(--accent);cursor:pointer}
+    .lockError{margin-top:10px;color:#fecaca;font-size:12px}
+    .lockHint{margin-top:10px;color:var(--muted);font-size:12px;line-height:1.35}
+
   </style>
 </head>
 <body>
+
+<div id="lockOverlay" class="lockOverlay" style="display:none">
+  <div class="lockCard">
+    <div class="lockTitle">Praxis App – gesperrt</div>
+    <div class="lockSub">Bitte PIN eingeben, um fortzufahren.</div>
+
+    <div id="lockCreate" style="display:none">
+      <label style="display:grid;gap:6px;font-size:12px;color:#cbd5e1;margin-top:10px">Neuen PIN setzen
+        <input id="pinNew1" inputmode="numeric" autocomplete="new-password" maxlength="12" placeholder="PIN (z.B. 6-stellig)"/>
+      </label>
+      <label style="display:grid;gap:6px;font-size:12px;color:#cbd5e1;margin-top:10px">PIN wiederholen
+        <input id="pinNew2" inputmode="numeric" autocomplete="new-password" maxlength="12" placeholder="PIN erneut eingeben"/>
+      </label>
+      <button id="btnSetPin" class="lockBtn" type="button">PIN speichern</button>
+      <div class="lockHint">Hinweis: Der PIN schützt nur diese App auf diesem Gerät/Browser. Ohne Cloud/Server kann ein technisch versierter Zugriff auf das Gerät trotzdem Daten auslesen.</div>
+    </div>
+
+    <div id="lockEnter" style="display:none">
+      <label style="display:grid;gap:6px;font-size:12px;color:#cbd5e1;margin-top:10px">PIN
+        <input id="pinEnter" inputmode="numeric" autocomplete="current-password" maxlength="12" placeholder="PIN eingeben"/>
+      </label>
+      <button id="btnUnlock" class="lockBtn" type="button">Entsperren</button>
+      <div id="lockError" class="lockError" style="display:none"></div>
+    </div>
+  </div>
+</div>
+
 <header>
   <div class="wrap titlebar">
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
@@ -71,6 +107,7 @@
       <button id="btnNew" class="secondary">Neuer Fall</button>
       <button id="btnSave">Fall speichern</button>
       <button id="btnPrint" class="secondary">PDF/Print</button>
+      <button id="btnLock" class="ghost">Sperren</button>
     </div>
   </div>
 </header>
@@ -263,6 +300,101 @@
  * }
  */
 const STORAGE_KEY = "praxisAppData_v1";
+
+
+
+const PIN_KEY = "praxisAppPin_v1"; // {saltB64, hashB64, iterations}
+
+function bufToB64(buf){
+  const bytes = new Uint8Array(buf);
+  let bin = "";
+  for (let i=0;i<bytes.length;i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+function b64ToBuf(b64){
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+  return bytes.buffer;
+}
+async function pbkdf2Hash(pin, saltBuf, iterations){
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw", enc.encode(pin), {name:"PBKDF2"}, false, ["deriveBits"]
+  );
+  const bits = await crypto.subtle.deriveBits(
+    {name:"PBKDF2", hash:"SHA-256", salt: saltBuf, iterations: iterations},
+    keyMaterial,
+    256
+  );
+  return bits;
+}
+function getPinRecord(){
+  try{
+    const raw = localStorage.getItem(PIN_KEY);
+    return raw ? JSON.parse(raw) : null;
+  }catch{ return null; }
+}
+function setPinRecord(rec){
+  localStorage.setItem(PIN_KEY, JSON.stringify(rec));
+}
+function setAppLocked(locked){
+  const el = $("lockOverlay");
+  el.style.display = locked ? "flex" : "none";
+}
+function showLockUI(){
+  const rec = getPinRecord();
+  const hasPin = !!(rec && rec.saltB64 && rec.hashB64);
+  $("lockCreate").style.display = hasPin ? "none" : "block";
+  $("lockEnter").style.display  = hasPin ? "block" : "none";
+  $("lockError").style.display  = "none";
+  $("pinEnter").value = "";
+  $("pinNew1").value = "";
+  $("pinNew2").value = "";
+  setAppLocked(true);
+  setTimeout(()=> (hasPin ? $("pinEnter") : $("pinNew1")).focus(), 50);
+}
+async function ensureUnlocked(){
+  showLockUI();
+  return await new Promise((resolve) => {
+    $("btnSetPin").onclick = async () => {
+      const p1 = ($("pinNew1").value || "").trim();
+      const p2 = ($("pinNew2").value || "").trim();
+      if(p1.length < 4){ alert("PIN zu kurz (mind. 4 Ziffern)."); return; }
+      if(p1 !== p2){ alert("PIN stimmt nicht überein."); return; }
+      const salt = crypto.getRandomValues(new Uint8Array(16)).buffer;
+      const iterations = 120000;
+      const hash = await pbkdf2Hash(p1, salt, iterations);
+      setPinRecord({saltB64: bufToB64(salt), hashB64: bufToB64(hash), iterations});
+      alert("PIN gespeichert. Bitte jetzt entsperren.");
+      showLockUI();
+    };
+    $("btnUnlock").onclick = async () => {
+      const rec2 = getPinRecord();
+      const pin = ($("pinEnter").value || "").trim();
+      if(!rec2){ showLockUI(); return; }
+      try{
+        const salt = b64ToBuf(rec2.saltB64);
+        const iterations = rec2.iterations || 120000;
+        const hash = await pbkdf2Hash(pin, salt, iterations);
+        const ok = (bufToB64(hash) === rec2.hashB64);
+        if(!ok){
+          const e = $("lockError");
+          e.textContent = "Falscher PIN.";
+          e.style.display = "block";
+          return;
+        }
+        setAppLocked(false);
+        resolve(true);
+      }catch{
+        const e = $("lockError");
+        e.textContent = "Fehler beim Entsperren.";
+        e.style.display = "block";
+      }
+    };
+  });
+}
+function lockNow(){ showLockUI(); }
 
 const $ = (id) => document.getElementById(id);
 let currentId = null;
@@ -634,7 +766,16 @@ function printOnlyText(title, text){
       h1{font-size:16px;margin:0 0 12px 0}
       pre{white-space:pre-wrap;word-wrap:break-word;border:1px solid #ddd;border-radius:12px;padding:14px;font-size:12.5px;line-height:1.35}
       @media print{body{margin:0} pre{border:none;border-radius:0;padding:0}}
-    </style>
+    
+    .lockOverlay{position:fixed;inset:0;background:rgba(3,7,18,.78);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;z-index:9999;padding:18px}
+    .lockCard{width:min(520px,100%);background:var(--card);border:1px solid var(--border);border-radius:18px;padding:14px}
+    .lockTitle{font-weight:900;font-size:16px}
+    .lockSub{margin-top:6px;color:var(--muted);font-size:12px}
+    .lockBtn{margin-top:12px;width:100%;border:0;border-radius:14px;padding:10px 12px;font-weight:900;color:white;background:var(--accent);cursor:pointer}
+    .lockError{margin-top:10px;color:#fecaca;font-size:12px}
+    .lockHint{margin-top:10px;color:var(--muted);font-size:12px;line-height:1.35}
+
+  </style>
   </head><body>
     <h1>${safeTitle}</h1>
     <pre>${body}</pre>
@@ -669,6 +810,8 @@ function wire(){
   });
 
   $("btnPrint").addEventListener("click", ()=>window.print());
+  $("btnLock").addEventListener("click", lockNow);
+
   $("btnCopy").addEventListener("click", async ()=>{
     try{ await navigator.clipboard.writeText($("genText").value); alert("Befund-Text kopiert."); }
     catch{ $("genText").select(); document.execCommand("copy"); alert("Befund-Text kopiert."); }
@@ -678,7 +821,8 @@ function wire(){
   $("btnPrintInvoice").addEventListener("click", ()=>{ if(!$("invoiceText").value.trim()) makeInvoice(); printOnlyText("Honorarnote / Rechnung", $("invoiceText").value); });
 }
 
-(function init(){
+(async function init(){
+  await ensureUnlocked();
   const data = loadData();
   $("date").value = todayISO();
   $("btnDelete").disabled = true;
