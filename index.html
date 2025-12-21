@@ -616,6 +616,33 @@ function makeInvoice(){
   saveData(data);
 }
 
+
+function printOnlyText(title, text){
+  // Minimales Druckfenster nur mit einem Textblock (z.B. Honorarnote)
+  const safeTitle = (title || "Druck").replace(/</g,"&lt;");
+  const body = (text || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  const w = window.open("", "_blank");
+  if(!w){ alert("Pop-up blockiert. Bitte Pop-ups erlauben."); return; }
+  w.document.open();
+  w.document.write(`<!doctype html>
+  <html lang="de"><head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <title>${safeTitle}</title>
+    <style>
+      body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:24px;color:#111}
+      h1{font-size:16px;margin:0 0 12px 0}
+      pre{white-space:pre-wrap;word-wrap:break-word;border:1px solid #ddd;border-radius:12px;padding:14px;font-size:12.5px;line-height:1.35}
+      @media print{body{margin:0} pre{border:none;border-radius:0;padding:0}}
+    </style>
+  </head><body>
+    <h1>${safeTitle}</h1>
+    <pre>${body}</pre>
+    <script>window.onload=()=>{window.focus();window.print();setTimeout(()=>window.close(),250);};</script>
+  </body></html>`);
+  w.document.close();
+}
+
 function wire(){
   const ids = ["clientName","dob","date","setting","question","methods","dsds","dtim","summary","reco",
                "invNo","invDate","invServiceDate","invService","invUnits","invRate","invTaxNote","invDueDays","invBillTo","invBillToAddr","invFrom","invBank"];
@@ -648,7 +675,7 @@ function wire(){
   });
 
   $("btnMakeInvoice").addEventListener("click", makeInvoice);
-  $("btnPrintInvoice").addEventListener("click", ()=>{ if(!$("invoiceText").value.trim()) makeInvoice(); window.print(); });
+  $("btnPrintInvoice").addEventListener("click", ()=>{ if(!$("invoiceText").value.trim()) makeInvoice(); printOnlyText("Honorarnote / Rechnung", $("invoiceText").value); });
 }
 
 (function init(){
