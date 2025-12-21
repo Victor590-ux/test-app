@@ -131,6 +131,42 @@
           </div>
         </div>
 
+        
+        <details class="noPrint" id="settingsPanel">
+          <summary>Einstellungen (Stammdaten Rechnungsteller:in)</summary>
+          <div style="height:10px"></div>
+          <div class="row">
+            <label>Absender (Name, Berufsbezeichnung, Adresse) – global
+              <textarea id="setFrom" placeholder="z.B. Vorname Nachname&#10;Klinische Psycholog:in&#10;Straße, PLZ Ort"></textarea>
+            </label>
+            <label>Bankverbindung (IBAN/BIC) – global
+              <textarea id="setBank" placeholder="IBAN …&#10;BIC … (optional)"></textarea>
+            </label>
+          </div>
+          <div class="two">
+            <div class="row">
+              <label>Standard-Tarif pro Einheit (€)
+                <input id="setRate" type="number" step="0.5" min="0"/>
+              </label>
+              <label>Zahlungsziel (Tage)
+                <input id="setDueDays" type="number" step="1" min="0"/>
+              </label>
+            </div>
+            <div class="row">
+              <label>USt-Hinweis (optional)
+                <input id="setTaxNote" placeholder="z.B. Umsatzsteuerfrei gem. § 6 Abs. 1 Z 27 UStG"/>
+              </label>
+            </div>
+          </div>
+
+          <div class="toolbar">
+            <span class="muted">Diese Stammdaten werden für alle Honorarnoten verwendet und sind NICHT pro Fall gespeichert.</span>
+            <div class="btns">
+              <button id="btnSaveSettings" class="secondary" type="button">Einstellungen speichern</button>
+            </div>
+          </div>
+        </details>
+
         <div class="cases" id="caseList"></div>
         <p class="muted" id="empty" style="display:none">Noch keine Fälle.</p>
       </div>
@@ -248,10 +284,10 @@
           </div>
           <div class="row">
             <label>Deine Daten (Absender)
-              <textarea id="invFrom" placeholder="Name, Berufsbezeichnung, Adresse"></textarea>
+              <textarea id="invFrom" readonly placeholder="Wird aus Einstellungen übernommen"></textarea>
             </label>
             <label>Bankverbindung (IBAN/BIC)
-              <textarea id="invBank" placeholder="IBAN …&#10;BIC … (optional)"></textarea>
+              <textarea id="invBank" readonly placeholder="Wird aus Einstellungen übernommen"></textarea>
             </label>
           </div>
         </div>
@@ -301,49 +337,35 @@
  */
 const STORAGE_KEY = "praxisAppData_v1";
 
+const $ = (id) => document.getElementById(id);
 
 
 const PIN_KEY = "praxisAppPin_v1"; // {saltB64, hashB64, iterations}
 
-function bufToB64(buf){
+function _bufToB64(buf){
   const bytes = new Uint8Array(buf);
   let bin = "";
   for (let i=0;i<bytes.length;i++) bin += String.fromCharCode(bytes[i]);
   return btoa(bin);
 }
-function b64ToBuf(b64){
+function _b64ToBuf(b64){
   const bin = atob(b64);
   const bytes = new Uint8Array(bin.length);
   for (let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
   return bytes.buffer;
 }
-async function pbkdf2Hash(pin, saltBuf, iterations){
+async function _pbkdf2(pin, saltBuf, iterations){
   const enc = new TextEncoder();
-  const keyMaterial = await crypto.subtle.importKey(
-    "raw", enc.encode(pin), {name:"PBKDF2"}, false, ["deriveBits"]
-  );
-  const bits = await crypto.subtle.deriveBits(
-    {name:"PBKDF2", hash:"SHA-256", salt: saltBuf, iterations: iterations},
-    keyMaterial,
-    256
-  );
-  return bits;
+  const keyMaterial = await crypto.subtle.importKey("raw", enc.encode(pin), {name:"PBKDF2"}, false, ["deriveBits"]);
+  return await crypto.subtle.deriveBits({name:"PBKDF2", hash:"SHA-256", salt:saltBuf, iterations}, keyMaterial, 256);
 }
-function getPinRecord(){
-  try{
-    const raw = localStorage.getItem(PIN_KEY);
-    return raw ? JSON.parse(raw) : null;
-  }catch{ return null; }
+function _getPinRecord(){
+  try{ const raw = localStorage.getItem(PIN_KEY); return raw ? JSON.parse(raw) : null; }catch{ return null; }
 }
-function setPinRecord(rec){
-  localStorage.setItem(PIN_KEY, JSON.stringify(rec));
-}
-function setAppLocked(locked){
-  const el = $("lockOverlay");
-  el.style.display = locked ? "flex" : "none";
-}
-function showLockUI(){
-  const rec = getPinRecord();
+function _setPinRecord(rec){ localStorage.setItem(PIN_KEY, JSON.stringify(rec)); }
+
+function _lockUI(){
+  const rec = _getPinRecord();
   const hasPin = !!(rec && rec.saltB64 && rec.hashB64);
   $("lockCreate").style.display = hasPin ? "none" : "block";
   $("lockEnter").style.display  = hasPin ? "block" : "none";
@@ -351,11 +373,12 @@ function showLockUI(){
   $("pinEnter").value = "";
   $("pinNew1").value = "";
   $("pinNew2").value = "";
-  setAppLocked(true);
+  $("lockOverlay").style.display = "flex";
   setTimeout(()=> (hasPin ? $("pinEnter") : $("pinNew1")).focus(), 50);
 }
+
 async function ensureUnlocked(){
-  showLockUI();
+  _lockUI();
   return await new Promise((resolve) => {
     $("btnSetPin").onclick = async () => {
       const p1 = ($("pinNew1").value || "").trim();
@@ -364,27 +387,28 @@ async function ensureUnlocked(){
       if(p1 !== p2){ alert("PIN stimmt nicht überein."); return; }
       const salt = crypto.getRandomValues(new Uint8Array(16)).buffer;
       const iterations = 120000;
-      const hash = await pbkdf2Hash(p1, salt, iterations);
-      setPinRecord({saltB64: bufToB64(salt), hashB64: bufToB64(hash), iterations});
+      const hash = await _pbkdf2(p1, salt, iterations);
+      _setPinRecord({saltB64: _bufToB64(salt), hashB64: _bufToB64(hash), iterations});
       alert("PIN gespeichert. Bitte jetzt entsperren.");
-      showLockUI();
+      _lockUI();
     };
+
     $("btnUnlock").onclick = async () => {
-      const rec2 = getPinRecord();
+      const rec2 = _getPinRecord();
       const pin = ($("pinEnter").value || "").trim();
-      if(!rec2){ showLockUI(); return; }
+      if(!rec2){ _lockUI(); return; }
       try{
-        const salt = b64ToBuf(rec2.saltB64);
+        const salt = _b64ToBuf(rec2.saltB64);
         const iterations = rec2.iterations || 120000;
-        const hash = await pbkdf2Hash(pin, salt, iterations);
-        const ok = (bufToB64(hash) === rec2.hashB64);
+        const hash = await _pbkdf2(pin, salt, iterations);
+        const ok = (_bufToB64(hash) === rec2.hashB64);
         if(!ok){
           const e = $("lockError");
           e.textContent = "Falscher PIN.";
           e.style.display = "block";
           return;
         }
-        setAppLocked(false);
+        $("lockOverlay").style.display = "none";
         resolve(true);
       }catch{
         const e = $("lockError");
@@ -394,9 +418,8 @@ async function ensureUnlocked(){
     };
   });
 }
-function lockNow(){ showLockUI(); }
+function lockNow(){ _lockUI(); }
 
-const $ = (id) => document.getElementById(id);
 let currentId = null;
 
 function uid(){
@@ -426,13 +449,7 @@ function saveData(d){
 function defaultData(){
   return normalizeData({
     version: 1,
-    profile: {
-      from: "",
-      bank: "",
-      taxNote: "Umsatzsteuerfrei gem. § 6 Abs. 1 Z 27 UStG (Kleinunternehmerregelung)",
-      rate: 80,
-      dueDays: 14
-    },
+    profile: {from:"", bank:"", taxNote:"Umsatzsteuerfrei gem. § 6 Abs. 1 Z 27 UStG (Kleinunternehmerregelung)", rate:80, dueDays:14},
     invoiceCounter: { year: new Date().getFullYear(), seq: 0 },
     cases: []
   });
@@ -523,8 +540,8 @@ function writeForm(c, data){
   $("invDueDays").value = (inv.dueDays ?? prof.dueDays ?? 14);
   $("invBillTo").value = inv.billTo || "";
   $("invBillToAddr").value = inv.billToAddr || "";
-  $("invFrom").value = inv.from ?? prof.from ?? "";
-  $("invBank").value = inv.bank ?? prof.bank ?? "";
+  $("invFrom").value = prof.from || "";
+  $("invBank").value = prof.bank || "";
   $("invoiceText").value = c?.invoiceText || "";
 
   renderGenerated();
@@ -553,6 +570,34 @@ function buildBefundText(d){
 }
 function renderGenerated(){
   $("genText").value = buildBefundText(readForm());
+}
+
+
+function loadSettingsIntoUI(){
+  const data = loadData();
+  $("setFrom").value = data.profile?.from || "";
+  $("setBank").value = data.profile?.bank || "";
+  $("setRate").value = data.profile?.rate ?? 80;
+  $("setDueDays").value = data.profile?.dueDays ?? 14;
+  $("setTaxNote").value = data.profile?.taxNote || "";
+  // Honorarnote-Felder spiegeln (read-only)
+  $("invFrom").value = data.profile?.from || "";
+  $("invBank").value = data.profile?.bank || "";
+  $("invRate").value = data.profile?.rate ?? 80;
+  $("invDueDays").value = data.profile?.dueDays ?? 14;
+  $("invTaxNote").value = data.profile?.taxNote || "";
+}
+function saveSettingsFromUI(){
+  const data = loadData();
+  data.profile = data.profile || {};
+  data.profile.from = ($("setFrom").value || "").trim();
+  data.profile.bank = ($("setBank").value || "").trim();
+  data.profile.rate = Number($("setRate").value || 0);
+  data.profile.dueDays = Number($("setDueDays").value || 0);
+  data.profile.taxNote = ($("setTaxNote").value || "").trim();
+  saveData(data);
+  loadSettingsIntoUI();
+  alert("Einstellungen gespeichert.");
 }
 
 function renderList(){
@@ -698,6 +743,12 @@ function makeInvoice(){
   const data = loadData();
   const form = readForm();
   const inv = form.invoice;
+  // immer globale Stammdaten verwenden
+  inv.from = (data.profile?.from || "").trim();
+  inv.bank = (data.profile?.bank || "").trim();
+  inv.rate = Number($("invRate").value || data.profile?.rate || 0);
+  inv.dueDays = Number($("invDueDays").value || data.profile?.dueDays || 0);
+  inv.taxNote = ($("invTaxNote").value || data.profile?.taxNote || "").trim();
 
   if(!inv.invNo){
     inv.invNo = nextInvoiceNo(data);
@@ -810,6 +861,8 @@ function wire(){
   });
 
   $("btnPrint").addEventListener("click", ()=>window.print());
+  if($("btnSaveSettings")) $("btnSaveSettings").addEventListener("click", saveSettingsFromUI);
+
   $("btnLock").addEventListener("click", lockNow);
 
   $("btnCopy").addEventListener("click", async ()=>{
@@ -819,6 +872,7 @@ function wire(){
 
   $("btnMakeInvoice").addEventListener("click", makeInvoice);
   $("btnPrintInvoice").addEventListener("click", ()=>{ if(!$("invoiceText").value.trim()) makeInvoice(); printOnlyText("Honorarnote / Rechnung", $("invoiceText").value); });
+printOnlyText("Honorarnote / Rechnung", $("invoiceText").value); });
 }
 
 (async function init(){
@@ -827,6 +881,7 @@ function wire(){
   $("date").value = todayISO();
   $("btnDelete").disabled = true;
   wire();
+  loadSettingsIntoUI();
   newCase();
   renderList();
 })();
